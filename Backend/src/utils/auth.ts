@@ -1,6 +1,6 @@
-import jwt, { JwtPayload } from 'jsonwebtoken';
+import jwt, { JwtPayload, SignOptions, Secret } from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET as string;
+const JWT_SECRET: Secret = process.env.JWT_SECRET as Secret;
 
 export function checkUser(token: string): string | null {
   try {
@@ -11,8 +11,10 @@ export function checkUser(token: string): string | null {
   }
 }
 
-export function signUser(payload: object, expiresIn: string = '1h') {
-  return jwt.sign(payload as any, JWT_SECRET, { expiresIn });
+export function signUser(payload: object, expiresIn: string | number = '1h') {
+  const options: SignOptions = {};
+  (options as any).expiresIn = expiresIn;
+  return jwt.sign(payload as any, JWT_SECRET, options);
 }
 
 
