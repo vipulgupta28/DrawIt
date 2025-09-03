@@ -1,7 +1,9 @@
 export type MessageHandler = (data: any) => void;
 
 export function createRoomSocket(token: string, onMessage: MessageHandler, onClose?: (ev: CloseEvent) => void) {
-	const url = `ws://localhost:3000?token=${encodeURIComponent(token)}`;
+	const BASE_URL = import.meta.env.VITE_BACKEND_URL;
+	const wsUrl = BASE_URL.replace('https://', 'wss://').replace('http://', 'ws://');
+	const url = `${wsUrl}?token=${encodeURIComponent(token)}`;
 	const socket = new WebSocket(url);
 	
 	socket.addEventListener("message", (ev) => {
