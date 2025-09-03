@@ -1,6 +1,6 @@
 import axios, { AxiosHeaders } from "axios";
 
-const BASE_URL = import.meta.env.VITE_BACKEND_URL ;
+const BASE_URL = " https://drawit-2.onrender.com";
 
 const api = axios.create({
   baseURL: BASE_URL,
