@@ -23,30 +23,30 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 const server = http.createServer(app);
+const allowedOrigins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://localhost:4173",
+    "https://draw-it-sepia-one.vercel.app", // your deployed frontend
+];
 // Attach WebSocket server to the HTTP server with CORS configuration
 const wss = new WebSocketServer({
     server,
-    verifyClient: (info) => {
-        // Allow connections from localhost (development) and your deployed frontend
+    verifyClient: (info, done) => {
         const origin = info.origin;
-        const allowedOrigins = [
-            'http://localhost:5173', // Vite dev server
-            'http://localhost:3000', // Alternative dev port
-            'https://draw-it-sepia-one.vercel.app/', // Replace with your actual frontend domain
-            'https://drawit-2.onrender.com', // Example Render frontend domain
-        ];
-        // Allow connections without origin (like Postman) or from allowed origins
         if (!origin || allowedOrigins.includes(origin)) {
-            return true;
+            done(true);
         }
-        console.warn('WebSocket connection rejected from origin:', origin);
-        return false;
+        else {
+            done(false, 403, "Forbidden");
+        }
     }
 });
 wss.on("connection", (ws, request) => {
     const url = request.url;
     const origin = request.headers.origin;
-    console.log("WebSocket connection attempt from origin:", origin);
+    console.log("🔌 New WebSocket connection attempt from origin:", origin);
+    console.log("🔗 Connection URL:", url);
     if (!url) {
         console.warn("WebSocket connection rejected: no URL provided");
         ws.close(4000, "No URL provided");
@@ -55,12 +55,13 @@ wss.on("connection", (ws, request) => {
     const queryParams = new URLSearchParams(url.split("?")[1]);
     const token = queryParams.get("token") || "";
     const userId = checkUser(token);
+    console.log("🔐 Token validation - User ID:", userId);
     if (!userId) {
-        console.warn("WebSocket unauthorized connection attempt from origin:", origin);
+        console.warn("❌ WebSocket unauthorized connection attempt from origin:", origin);
         ws.close(4001, "unauthorized");
         return;
     }
-    console.log("WebSocket connection established for user:", userId, "from origin:", origin);
+    console.log("✅ WebSocket connection established for user:", userId, "from origin:", origin);
     users.push({ userId, rooms: [], ws });
     // Set up keepalive ping-pong mechanism
     const pingInterval = setInterval(() => {
@@ -81,93 +82,131 @@ wss.on("connection", (ws, request) => {
         // Client responded to ping, connection is alive
     });
     ws.on("message", (data) => {
-        const parseData = JSON.parse(data.toString());
-        if (parseData.type === "join_room") {
-            const user = users.find((x) => x.ws === ws);
-            if (user && !user.rooms.includes(parseData.roomId)) {
-                user.rooms.push(parseData.roomId);
-                // Notify other users in the room
-                users.forEach((otherUser) => {
-                    if (otherUser.ws !== ws && otherUser.rooms.includes(parseData.roomId)) {
-                        otherUser.ws.send(JSON.stringify({
-                            type: "user_joined",
-                            roomId: parseData.roomId,
-                            userId: user.userId
+        try {
+            const parseData = JSON.parse(data.toString());
+            console.log("📨 Received message from user", userId, ":", parseData.type);
+            if (parseData.type === "join_room") {
+                console.log("🏠 User", userId, "attempting to join room:", parseData.roomId);
+                const user = users.find((x) => x.ws === ws);
+                console.log("👤 User found in users array:", !!user);
+                if (user) {
+                    console.log("📋 User's current rooms:", user.rooms);
+                    console.log("🔄 Room already joined:", user.rooms.includes(parseData.roomId));
+                }
+                if (user && !user.rooms.includes(parseData.roomId)) {
+                    console.log("✅ Adding user", userId, "to room:", parseData.roomId);
+                    user.rooms.push(parseData.roomId);
+                    // Notify other users in the room
+                    users.forEach((otherUser) => {
+                        if (otherUser.ws !== ws && otherUser.rooms.includes(parseData.roomId)) {
+                            try {
+                                otherUser.ws.send(JSON.stringify({
+                                    type: "user_joined",
+                                    roomId: parseData.roomId,
+                                    userId: user.userId
+                                }));
+                                console.log("📤 Sent user_joined to user:", otherUser.userId);
+                            }
+                            catch (error) {
+                                console.error("❌ Failed to send user_joined to user:", otherUser.userId, error);
+                            }
+                        }
+                    });
+                    // Push updated room user list to all in room
+                    const roomUsers = users.filter(u => u.rooms.includes(parseData.roomId)).map(u => u.userId);
+                    console.log("👥 Room users after join:", roomUsers);
+                    users.forEach((u) => {
+                        if (u.rooms.includes(parseData.roomId)) {
+                            try {
+                                u.ws.send(JSON.stringify({ type: "room_users", roomId: parseData.roomId, users: roomUsers }));
+                                console.log("📤 Sent room_users to user:", u.userId);
+                            }
+                            catch (error) {
+                                console.error("❌ Failed to send room_users to user:", u.userId, error);
+                            }
+                        }
+                    });
+                    // Ask for current snapshot from someone in the room (not the joiner)
+                    const donor = users.find(u => u.ws !== ws && u.rooms.includes(parseData.roomId));
+                    if (donor) {
+                        try {
+                            donor.ws.send(JSON.stringify({ type: "request_snapshot", roomId: parseData.roomId }));
+                            console.log("📤 Sent request_snapshot to user:", donor.userId);
+                        }
+                        catch (error) {
+                            console.error("❌ Failed to send request_snapshot to user:", donor.userId, error);
+                        }
+                    }
+                    else {
+                        console.log("ℹ️ No donor found for snapshot request");
+                    }
+                    console.log("✅ User", userId, "successfully joined room", parseData.roomId);
+                    console.log("🔍 WebSocket state after join:", ws.readyState);
+                }
+                else {
+                    console.log("⚠️ User not found or already in room");
+                }
+            }
+            if (parseData.type === "leave_room") {
+                const user = users.find((x) => x.ws === ws);
+                if (user) {
+                    user.rooms = user.rooms.filter((r) => r !== parseData.roomId);
+                    // Notify other users in the room
+                    users.forEach((otherUser) => {
+                        if (otherUser.rooms.includes(parseData.roomId)) {
+                            otherUser.ws.send(JSON.stringify({
+                                type: "user_left",
+                                roomId: parseData.roomId,
+                                userId: user.userId
+                            }));
+                        }
+                    });
+                    // Push updated room user list after leave
+                    const roomUsers = users.filter(u => u.rooms.includes(parseData.roomId)).map(u => u.userId);
+                    users.forEach((u) => {
+                        if (u.rooms.includes(parseData.roomId)) {
+                            u.ws.send(JSON.stringify({ type: "room_users", roomId: parseData.roomId, users: roomUsers }));
+                        }
+                    });
+                }
+            }
+            if (parseData.type === "chat") {
+                const { roomId, message } = parseData;
+                users.forEach((user) => {
+                    if (user.rooms.includes(roomId)) {
+                        user.ws.send(JSON.stringify({
+                            type: "chat",
+                            message,
+                            roomId,
                         }));
                     }
                 });
-                // Push updated room user list to all in room
-                const roomUsers = users.filter(u => u.rooms.includes(parseData.roomId)).map(u => u.userId);
-                users.forEach((u) => {
-                    if (u.rooms.includes(parseData.roomId)) {
-                        u.ws.send(JSON.stringify({ type: "room_users", roomId: parseData.roomId, users: roomUsers }));
-                    }
-                });
-                // Ask for current snapshot from someone in the room (not the joiner)
-                const donor = users.find(u => u.ws !== ws && u.rooms.includes(parseData.roomId));
-                if (donor) {
-                    try {
-                        donor.ws.send(JSON.stringify({ type: "request_snapshot", roomId: parseData.roomId }));
-                    }
-                    catch { }
-                }
             }
-        }
-        if (parseData.type === "leave_room") {
-            const user = users.find((x) => x.ws === ws);
-            if (user) {
-                user.rooms = user.rooms.filter((r) => r !== parseData.roomId);
-                // Notify other users in the room
-                users.forEach((otherUser) => {
-                    if (otherUser.rooms.includes(parseData.roomId)) {
-                        otherUser.ws.send(JSON.stringify({
-                            type: "user_left",
-                            roomId: parseData.roomId,
-                            userId: user.userId
+            if (parseData.type === "canvas_update") {
+                const { roomId, snapshot } = parseData;
+                users.forEach((user) => {
+                    if (user.ws !== ws && user.rooms.includes(roomId)) {
+                        user.ws.send(JSON.stringify({
+                            type: "canvas_update",
+                            roomId,
+                            snapshot,
                         }));
                     }
                 });
-                // Push updated room user list after leave
-                const roomUsers = users.filter(u => u.rooms.includes(parseData.roomId)).map(u => u.userId);
-                users.forEach((u) => {
-                    if (u.rooms.includes(parseData.roomId)) {
-                        u.ws.send(JSON.stringify({ type: "room_users", roomId: parseData.roomId, users: roomUsers }));
-                    }
-                });
+            }
+            if (parseData.type === "get_room_users") {
+                const { roomId } = parseData;
+                const roomUsers = users.filter(user => user.rooms.includes(roomId));
+                ws.send(JSON.stringify({
+                    type: "room_users",
+                    roomId,
+                    users: roomUsers.map(u => u.userId)
+                }));
             }
         }
-        if (parseData.type === "chat") {
-            const { roomId, message } = parseData;
-            users.forEach((user) => {
-                if (user.rooms.includes(roomId)) {
-                    user.ws.send(JSON.stringify({
-                        type: "chat",
-                        message,
-                        roomId,
-                    }));
-                }
-            });
-        }
-        if (parseData.type === "canvas_update") {
-            const { roomId, snapshot } = parseData;
-            users.forEach((user) => {
-                if (user.ws !== ws && user.rooms.includes(roomId)) {
-                    user.ws.send(JSON.stringify({
-                        type: "canvas_update",
-                        roomId,
-                        snapshot,
-                    }));
-                }
-            });
-        }
-        if (parseData.type === "get_room_users") {
-            const { roomId } = parseData;
-            const roomUsers = users.filter(user => user.rooms.includes(roomId));
-            ws.send(JSON.stringify({
-                type: "room_users",
-                roomId,
-                users: roomUsers.map(u => u.userId)
-            }));
+        catch (error) {
+            console.error("❌ Error parsing WebSocket message from user", userId, ":", error);
+            console.error("Raw message:", data.toString());
         }
     });
     ws.on("error", (err) => {
@@ -177,7 +216,8 @@ wss.on("connection", (ws, request) => {
         catch { }
     });
     ws.on("close", (code, reason) => {
-        console.log("WebSocket connection closed for user:", userId, "Code:", code, "Reason:", reason.toString());
+        console.log("🔌 WebSocket connection closed for user:", userId, "Code:", code, "Reason:", reason.toString());
+        console.log("📊 Total connected users before cleanup:", users.length);
         // Clean up ping interval
         clearInterval(pingInterval);
         const idx = users.findIndex(u => u.ws === ws);

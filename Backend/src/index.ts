@@ -41,32 +41,26 @@ app.use(cors());
 
 const server = http.createServer(app);
 
+const allowedOrigins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://localhost:4173",
+    "https://draw-it-sepia-one.vercel.app", // your deployed frontend
+  ];
+  
+
 // Attach WebSocket server to the HTTP server with CORS configuration
 const wss = new WebSocketServer({ 
   server,
-  verifyClient: (info: { origin: string }) => {
-    // Allow connections from localhost (development) and your deployed frontend
+  verifyClient: (info, done) => {
     const origin = info.origin;
-    const allowedOrigins = [
-      'http://localhost:5173', // Vite dev server
-      'http://localhost:3000', // Alternative dev port
-      'http://localhost:4173', // Vite preview server
-      'https://draw-it-sepia-one.vercel.app', // Remove trailing slash
-      'https://drawit-2.onrender.com', // Example Render frontend domain
-    ];
-    
-    console.log('WebSocket connection attempt from origin:', origin);
-    
-    // Allow connections without origin (like Postman) or from allowed origins
     if (!origin || allowedOrigins.includes(origin)) {
-      console.log('WebSocket connection allowed from origin:', origin);
-      return true;
+      done(true);
+    } else {
+      done(false, 403, "Forbidden");
     }
-    
-    console.warn('WebSocket connection rejected from origin:', origin);
-    console.warn('Allowed origins:', allowedOrigins);
-    return false;
   }
+  
 });
 
 wss.on("connection", (ws, request) => {
