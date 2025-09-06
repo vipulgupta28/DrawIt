@@ -73,7 +73,8 @@ wss.on("connection", (ws, request) => {
   const url = request.url;
   const origin = request.headers.origin;
   
-  console.log("WebSocket connection attempt from origin:", origin);
+  console.log("🔌 New WebSocket connection attempt from origin:", origin);
+  console.log("🔗 Connection URL:", url);
   
   if (!url) {
     console.warn("WebSocket connection rejected: no URL provided");
@@ -85,13 +86,15 @@ wss.on("connection", (ws, request) => {
   const token = queryParams.get("token") || "";
   const userId = checkUser(token);
 
+  console.log("🔐 Token validation - User ID:", userId);
+
   if (!userId) {
-    console.warn("WebSocket unauthorized connection attempt from origin:", origin);
+    console.warn("❌ WebSocket unauthorized connection attempt from origin:", origin);
     ws.close(4001, "unauthorized");
     return;
   }
   
-  console.log("WebSocket connection established for user:", userId, "from origin:", origin);
+  console.log("✅ WebSocket connection established for user:", userId, "from origin:", origin);
 
   users.push({ userId, rooms: [], ws });
 
@@ -119,26 +122,44 @@ wss.on("connection", (ws, request) => {
       console.log("📨 Received message from user", userId, ":", parseData.type);
 
       if (parseData.type === "join_room") {
+        console.log("🏠 User", userId, "attempting to join room:", parseData.roomId);
         const user = users.find((x) => x.ws === ws);
+        console.log("👤 User found in users array:", !!user);
+        if (user) {
+          console.log("📋 User's current rooms:", user.rooms);
+          console.log("🔄 Room already joined:", user.rooms.includes(parseData.roomId));
+        }
         if (user && !user.rooms.includes(parseData.roomId)) {
+          console.log("✅ Adding user", userId, "to room:", parseData.roomId);
           user.rooms.push(parseData.roomId);
           
           // Notify other users in the room
           users.forEach((otherUser) => {
             if (otherUser.ws !== ws && otherUser.rooms.includes(parseData.roomId)) {
-              otherUser.ws.send(JSON.stringify({
-                type: "user_joined",
-                roomId: parseData.roomId,
-                userId: user.userId
-              }));
+              try {
+                otherUser.ws.send(JSON.stringify({
+                  type: "user_joined",
+                  roomId: parseData.roomId,
+                  userId: user.userId
+                }));
+                console.log("📤 Sent user_joined to user:", otherUser.userId);
+              } catch (error) {
+                console.error("❌ Failed to send user_joined to user:", otherUser.userId, error);
+              }
             }
           });
 
           // Push updated room user list to all in room
           const roomUsers = users.filter(u => u.rooms.includes(parseData.roomId)).map(u => u.userId);
+          console.log("👥 Room users after join:", roomUsers);
           users.forEach((u) => {
             if (u.rooms.includes(parseData.roomId)) {
-              u.ws.send(JSON.stringify({ type: "room_users", roomId: parseData.roomId, users: roomUsers }));
+              try {
+                u.ws.send(JSON.stringify({ type: "room_users", roomId: parseData.roomId, users: roomUsers }));
+                console.log("📤 Sent room_users to user:", u.userId);
+              } catch (error) {
+                console.error("❌ Failed to send room_users to user:", u.userId, error);
+              }
             }
           });
 
@@ -147,10 +168,18 @@ wss.on("connection", (ws, request) => {
           if (donor) {
             try {
               donor.ws.send(JSON.stringify({ type: "request_snapshot", roomId: parseData.roomId }));
-            } catch {}
+              console.log("📤 Sent request_snapshot to user:", donor.userId);
+            } catch (error) {
+              console.error("❌ Failed to send request_snapshot to user:", donor.userId, error);
+            }
+          } else {
+            console.log("ℹ️ No donor found for snapshot request");
           }
           
           console.log("✅ User", userId, "successfully joined room", parseData.roomId);
+          console.log("🔍 WebSocket state after join:", ws.readyState);
+        } else {
+          console.log("⚠️ User not found or already in room");
         }
       }
       
@@ -231,7 +260,8 @@ wss.on("connection", (ws, request) => {
   });
 
   ws.on("close", (code, reason) => {
-    console.log("WebSocket connection closed for user:", userId, "Code:", code, "Reason:", reason.toString());
+    console.log("🔌 WebSocket connection closed for user:", userId, "Code:", code, "Reason:", reason.toString());
+    console.log("📊 Total connected users before cleanup:", users.length);
     
     // Clean up ping interval
     clearInterval(pingInterval);
