@@ -114,43 +114,47 @@ wss.on("connection", (ws, request) => {
   });
 
   ws.on("message", (data) => {
-    const parseData = JSON.parse(data.toString());
+    try {
+      const parseData = JSON.parse(data.toString());
+      console.log("📨 Received message from user", userId, ":", parseData.type);
 
-    if (parseData.type === "join_room") {
-      const user = users.find((x) => x.ws === ws);
-      if (user && !user.rooms.includes(parseData.roomId)) {
-        user.rooms.push(parseData.roomId);
-        
-        // Notify other users in the room
-        users.forEach((otherUser) => {
-          if (otherUser.ws !== ws && otherUser.rooms.includes(parseData.roomId)) {
-            otherUser.ws.send(JSON.stringify({
-              type: "user_joined",
-              roomId: parseData.roomId,
-              userId: user.userId
-            }));
+      if (parseData.type === "join_room") {
+        const user = users.find((x) => x.ws === ws);
+        if (user && !user.rooms.includes(parseData.roomId)) {
+          user.rooms.push(parseData.roomId);
+          
+          // Notify other users in the room
+          users.forEach((otherUser) => {
+            if (otherUser.ws !== ws && otherUser.rooms.includes(parseData.roomId)) {
+              otherUser.ws.send(JSON.stringify({
+                type: "user_joined",
+                roomId: parseData.roomId,
+                userId: user.userId
+              }));
+            }
+          });
+
+          // Push updated room user list to all in room
+          const roomUsers = users.filter(u => u.rooms.includes(parseData.roomId)).map(u => u.userId);
+          users.forEach((u) => {
+            if (u.rooms.includes(parseData.roomId)) {
+              u.ws.send(JSON.stringify({ type: "room_users", roomId: parseData.roomId, users: roomUsers }));
+            }
+          });
+
+          // Ask for current snapshot from someone in the room (not the joiner)
+          const donor = users.find(u => u.ws !== ws && u.rooms.includes(parseData.roomId));
+          if (donor) {
+            try {
+              donor.ws.send(JSON.stringify({ type: "request_snapshot", roomId: parseData.roomId }));
+            } catch {}
           }
-        });
-
-        // Push updated room user list to all in room
-        const roomUsers = users.filter(u => u.rooms.includes(parseData.roomId)).map(u => u.userId);
-        users.forEach((u) => {
-          if (u.rooms.includes(parseData.roomId)) {
-            u.ws.send(JSON.stringify({ type: "room_users", roomId: parseData.roomId, users: roomUsers }));
-          }
-        });
-
-        // Ask for current snapshot from someone in the room (not the joiner)
-        const donor = users.find(u => u.ws !== ws && u.rooms.includes(parseData.roomId));
-        if (donor) {
-          try {
-            donor.ws.send(JSON.stringify({ type: "request_snapshot", roomId: parseData.roomId }));
-          } catch {}
+          
+          console.log("✅ User", userId, "successfully joined room", parseData.roomId);
         }
       }
-    }
-
-    if (parseData.type === "leave_room") {
+      
+      if (parseData.type === "leave_room") {
       const user = users.find((x) => x.ws === ws);
       if (user) {
         user.rooms = user.rooms.filter((r) => r !== parseData.roomId);
@@ -206,14 +210,19 @@ wss.on("connection", (ws, request) => {
       });
     }
 
-    if (parseData.type === "get_room_users") {
-      const { roomId } = parseData;
-      const roomUsers = users.filter(user => user.rooms.includes(roomId));
-      ws.send(JSON.stringify({
-        type: "room_users",
-        roomId,
-        users: roomUsers.map(u => u.userId)
-      }));
+      if (parseData.type === "get_room_users") {
+        const { roomId } = parseData;
+        const roomUsers = users.filter(user => user.rooms.includes(roomId));
+        ws.send(JSON.stringify({
+          type: "room_users",
+          roomId,
+          users: roomUsers.map(u => u.userId)
+        }));
+      }
+      
+    } catch (error) {
+      console.error("❌ Error parsing WebSocket message from user", userId, ":", error);
+      console.error("Raw message:", data.toString());
     }
   });
 

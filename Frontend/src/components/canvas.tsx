@@ -156,24 +156,34 @@ export default function Canvas() {
     socket.addEventListener("message", (ev) => {
       try {
         const data = JSON.parse(ev.data);
-        console.log("WebSocket message received:", data);
+        console.log("📨 WebSocket message received:", data);
+        
         if (data.type === "canvas_update" && data.roomId === rid) {
+          console.log("🎨 Updating canvas with snapshot");
           replaceSnapshot(data.snapshot);
         } else if (data.type === "room_users" && data.roomId === rid) {
+          console.log("👥 Room users updated:", data.users);
           setRoomUsers(data.users || []);
         } else if (data.type === "request_snapshot" && data.roomId === rid) {
+          console.log("📸 Sending current snapshot to new user");
           // another client requested current snapshot for this room
           const snap = getSnapshot();
           socket.send(JSON.stringify({ type: "canvas_snapshot", roomId: rid, snapshot: snap }));
         } else if (data.type === "canvas_snapshot" && data.roomId === rid) {
+          console.log("📸 Received canvas snapshot from another user");
           replaceSnapshot(data.snapshot);
         } else if (data.type === "user_joined" && data.roomId === rid) {
+          console.log("👋 User joined the room:", data.userId);
           showNotification(`User joined the room`);
         } else if (data.type === "user_left" && data.roomId === rid) {
+          console.log("👋 User left the room:", data.userId);
           showNotification(`User left the room`);
+        } else {
+          console.log("ℹ️ Unhandled message type:", data.type);
         }
       } catch (error) {
-        console.error("Failed to parse WebSocket message:", error);
+        console.error("❌ Failed to parse WebSocket message:", error);
+        console.error("Raw message data:", ev.data);
       }
     });
     
@@ -183,8 +193,11 @@ export default function Canvas() {
     });
     
     socket.addEventListener("close", async (ev) => {
-      console.log("WebSocket connection closed", ev.code, ev.reason);
+      console.log("🔌 WebSocket connection closed - Code:", ev.code, "Reason:", ev.reason);
+      console.log("Close was clean:", ev.wasClean);
+      
       if (ev.code === 4001) {
+        console.log("🚫 Unauthorized, trying guest token...");
         try {
           if (!triedGuest) {
             triedGuest = true;
@@ -200,10 +213,19 @@ export default function Canvas() {
             }
           }
         } catch (e) {
-          console.error("Guest fallback failed", e);
+          console.error("❌ Guest fallback failed", e);
         }
         alert("Your session expired or is invalid. Please login again.");
         handleLogout();
+      } else if (ev.code === 1005) {
+        // No status code received - this might be a network issue or server restart
+        console.log("⚠️ No status code received - possible network issue or server restart");
+        // Don't show alert for 1005 as it might be temporary
+      } else if (ev.code === 1000) {
+        // Normal closure
+        console.log("✅ Connection closed normally");
+      } else {
+        console.log("ℹ️ Connection closed for other reasons");
       }
     });
     
