@@ -1,7 +1,7 @@
 // Canvas.tsx
 import { useEffect, useRef, useState } from "react";
 import api from "../lib/api";
-import { createRoomSocket } from "../lib/ws";
+import { createRoomSocket, testWebSocketConnection, validateToken } from "../lib/ws";
 import initDraw, { setTool, undo, redo, clearAll, exportPNG, onChange, replaceSnapshot, getSnapshot, onViewChange, getViewTransform, setZoom } from "./draw";
 import {
   Square,
@@ -108,6 +108,20 @@ export default function Canvas() {
 
   // connect helper
   async function connectToRoom(token: string, rid: string) {
+    console.log("🔗 Attempting to connect to room:", rid);
+    
+    // Validate token first
+    const tokenValidation = validateToken(token);
+    if (!tokenValidation.isValid) {
+      console.error("❌ Invalid token:", tokenValidation.error);
+      alert("Invalid authentication token. Please sign in again.");
+      return;
+    }
+    
+    // Test WebSocket connection first
+    console.log("🧪 Testing WebSocket connection...");
+    testWebSocketConnection(token);
+    
     // Leave current room if any
     leaveCurrentRoom();
     // Ensure any previous socket is closed before opening a new one

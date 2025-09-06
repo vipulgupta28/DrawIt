@@ -50,16 +50,21 @@ const wss = new WebSocketServer({
     const allowedOrigins = [
       'http://localhost:5173', // Vite dev server
       'http://localhost:3000', // Alternative dev port
-      'https://draw-it-sepia-one.vercel.app/', // Replace with your actual frontend domain
+      'http://localhost:4173', // Vite preview server
+      'https://draw-it-sepia-one.vercel.app', // Remove trailing slash
       'https://drawit-2.onrender.com', // Example Render frontend domain
     ];
     
+    console.log('WebSocket connection attempt from origin:', origin);
+    
     // Allow connections without origin (like Postman) or from allowed origins
     if (!origin || allowedOrigins.includes(origin)) {
+      console.log('WebSocket connection allowed from origin:', origin);
       return true;
     }
     
     console.warn('WebSocket connection rejected from origin:', origin);
+    console.warn('Allowed origins:', allowedOrigins);
     return false;
   }
 });
