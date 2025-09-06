@@ -94,6 +94,21 @@ export function testWebSocketConnection(token: string) {
 	return testSocket;
 }
 
+// Function to set up automatic token refresh
+export function setupTokenRefresh() {
+	// Check token every 5 minutes
+	setInterval(async () => {
+		const token = localStorage.getItem("authToken");
+		if (token) {
+			const validation = validateToken(token);
+			if (!validation.isValid && validation.error === "Token is expired") {
+				console.log("🔄 Token expired, refreshing automatically...");
+				await getFreshToken();
+			}
+		}
+	}, 5 * 60 * 1000); // 5 minutes
+}
+
 // Function to validate JWT token format
 export function validateToken(token: string): { isValid: boolean; error?: string } {
 	if (!token) {
@@ -122,5 +137,34 @@ export function validateToken(token: string): { isValid: boolean; error?: string
 		return { isValid: true };
 	} catch (error) {
 		return { isValid: false, error: "Failed to decode token: " + error };
+	}
+}
+
+// Function to get a fresh token
+export async function getFreshToken(): Promise<string | null> {
+	try {
+		// Try to get a new guest token
+		const response = await fetch(`${import.meta.env.DEV ? 'http://localhost:3000' : 'https://drawit-2.onrender.com'}/guest`, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({ 
+				username: `user_${Date.now()}` // Generate a unique username
+			})
+		});
+		
+		if (response.ok) {
+			const data = await response.json();
+			localStorage.setItem("authToken", data.token);
+			console.log('✅ Got fresh token');
+			return data.token;
+		} else {
+			console.error('❌ Failed to get fresh token:', response.status);
+			return null;
+		}
+	} catch (error) {
+		console.error('❌ Error getting fresh token:', error);
+		return null;
 	}
 }

@@ -1,7 +1,7 @@
 // Canvas.tsx
 import { useEffect, useRef, useState } from "react";
 import api from "../lib/api";
-import { createRoomSocket, testWebSocketConnection, validateToken } from "../lib/ws";
+import { createRoomSocket, testWebSocketConnection, validateToken, getFreshToken } from "../lib/ws";
 import initDraw, { setTool, undo, redo, clearAll, exportPNG, onChange, replaceSnapshot, getSnapshot, onViewChange, getViewTransform, setZoom } from "./draw";
 import {
   Square,
@@ -114,8 +114,22 @@ export default function Canvas() {
     const tokenValidation = validateToken(token);
     if (!tokenValidation.isValid) {
       console.error("❌ Invalid token:", tokenValidation.error);
-      alert("Invalid authentication token. Please sign in again.");
-      return;
+      
+      // If token is expired, try to get a fresh one
+      if (tokenValidation.error === "Token is expired") {
+        console.log("🔄 Token expired, attempting to get fresh token...");
+        const freshToken = await getFreshToken();
+        if (freshToken) {
+          console.log("✅ Got fresh token, retrying connection...");
+          return connectToRoom(freshToken, rid);
+        } else {
+          alert("Session expired. Please refresh the page to get a new session.");
+          return;
+        }
+      } else {
+        alert("Invalid authentication token. Please sign in again.");
+        return;
+      }
     }
     
     // Test WebSocket connection first
