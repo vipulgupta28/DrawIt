@@ -68,9 +68,7 @@ export function createRoomSocket(token: string, onMessage: MessageHandler, onClo
 export function testWebSocketConnection(token: string) {
 	console.log("🧪 Testing WebSocket connection...");
 	
-	const BASE_URL = import.meta.env.DEV 
-		? "ws://localhost:3000" 
-		: "wss://drawit-2.onrender.com";
+	const BASE_URL = "wss://drawit-2.onrender.com";
 	const url = `${BASE_URL}?token=${encodeURIComponent(token)}`;
 	
 	console.log("Test URL:", url);
