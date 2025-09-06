@@ -1,5 +1,5 @@
 import express from "express";
-import jwt, { JwtPayload } from 'jsonwebtoken';
+import jwt, { type JwtPayload } from 'jsonwebtoken';
 import {WebSocketServer} from "ws";
 import crypto from "crypto";
 import dotenv from "dotenv";
@@ -41,24 +41,72 @@ app.use(cors());
 
 const server = http.createServer(app);
 
-// Attach WebSocket server to the HTTP server
-const wss = new WebSocketServer({ server });
+// Attach WebSocket server to the HTTP server with CORS configuration
+const wss = new WebSocketServer({ 
+  server,
+  verifyClient: (info: { origin: string }) => {
+    // Allow connections from localhost (development) and your deployed frontend
+    const origin = info.origin;
+    const allowedOrigins = [
+      'http://localhost:5173', // Vite dev server
+      'http://localhost:3000', // Alternative dev port
+      'https://draw-it-sepia-one.vercel.app/', // Replace with your actual frontend domain
+      'https://drawit-2.onrender.com', // Example Render frontend domain
+    ];
+    
+    // Allow connections without origin (like Postman) or from allowed origins
+    if (!origin || allowedOrigins.includes(origin)) {
+      return true;
+    }
+    
+    console.warn('WebSocket connection rejected from origin:', origin);
+    return false;
+  }
+});
 
 wss.on("connection", (ws, request) => {
   const url = request.url;
-  if (!url) return;
+  const origin = request.headers.origin;
+  
+  console.log("WebSocket connection attempt from origin:", origin);
+  
+  if (!url) {
+    console.warn("WebSocket connection rejected: no URL provided");
+    ws.close(4000, "No URL provided");
+    return;
+  }
 
   const queryParams = new URLSearchParams(url.split("?")[1]);
   const token = queryParams.get("token") || "";
   const userId = checkUser(token);
 
   if (!userId) {
-    try { console.warn("WS unauthorized connection attempt"); } catch {}
+    console.warn("WebSocket unauthorized connection attempt from origin:", origin);
     ws.close(4001, "unauthorized");
     return;
   }
+  
+  console.log("WebSocket connection established for user:", userId, "from origin:", origin);
 
   users.push({ userId, rooms: [], ws });
+
+  // Set up keepalive ping-pong mechanism
+  const pingInterval = setInterval(() => {
+    if (ws.readyState === ws.OPEN) {
+      try {
+        ws.ping();
+      } catch (error) {
+        console.error("Error sending ping:", error);
+        clearInterval(pingInterval);
+      }
+    } else {
+      clearInterval(pingInterval);
+    }
+  }, 30000); // Ping every 30 seconds
+
+  ws.on("pong", () => {
+    // Client responded to ping, connection is alive
+  });
 
   ws.on("message", (data) => {
     const parseData = JSON.parse(data.toString());
@@ -168,10 +216,15 @@ wss.on("connection", (ws, request) => {
     try { console.error("WS error:", err); } catch {}
   });
 
-  ws.on("close", () => {
+  ws.on("close", (code, reason) => {
+    console.log("WebSocket connection closed for user:", userId, "Code:", code, "Reason:", reason.toString());
+    
+    // Clean up ping interval
+    clearInterval(pingInterval);
+    
     const idx = users.findIndex(u => u.ws === ws);
     if (idx >= 0) {
-      const user = users[idx];
+      const user = users[idx]!;
       // notify rooms this user left
       user.rooms.forEach((roomId) => {
         users.forEach((otherUser) => {

@@ -36,9 +36,11 @@ export default function AuthModal({ onLogin }: AuthModalProps) {
           password: password
         });
         
-        if (response.data.user) {
+        if (response.data.token && response.data.user) {
           // Auto-login after successful signup
-          await handleLogin();
+          localStorage.setItem("authToken", response.data.token);
+          localStorage.setItem("user", JSON.stringify(response.data.user));
+          onLogin(response.data.user.username);
         }
       } else {
         // Login
