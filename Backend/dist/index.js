@@ -2,14 +2,12 @@ import express from "express";
 import jwt, {} from 'jsonwebtoken';
 import { WebSocketServer } from "ws";
 import crypto from "crypto";
-import dotenv from "dotenv";
 import bcrypt from "bcrypt";
-import { createClient } from "@supabase/supabase-js";
 import cors from "cors";
+import { addUser, findUserByUsername, getChatsByRoom, getRoomBySlug, publicUser } from "./localStore.js";
 import http from "http";
 const users = [];
-dotenv.config();
-const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_SECRET = "process.env.JWT_SECRET!";
 function checkUser(token) {
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
@@ -238,25 +236,29 @@ wss.on("connection", (ws, request) => {
         }
     });
 });
-// Supabase client
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 app.post("/signup", async (req, res) => {
     try {
         const { name, username, password } = req.body;
         if (!name || !username || !password) {
             return res.status(400).json({ error: "All fields are required" });
         }
-        // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
-        // Insert into Supabase
-        const { data, error } = await supabase
-            .from("user")
-            .insert([{ name: name, username: username, password: hashedPassword }])
-            .select();
-        if (error) {
-            return res.status(400).json({ error: error.message });
+        const id = crypto.randomUUID();
+        const user = {
+            id,
+            name: String(name).trim(),
+            username: String(username).trim(),
+            password: hashedPassword,
+        };
+        const inserted = await addUser(user);
+        if (!inserted.ok) {
+            return res.status(400).json({ error: inserted.error });
         }
-        return res.status(201).json({ user: data[0] });
+        const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: "7d" });
+        return res.status(201).json({
+            token,
+            user: publicUser(user),
+        });
     }
     catch (err) {
         console.error(err);
@@ -269,30 +271,17 @@ app.post("/signin", async (req, res) => {
         if (!username || !password) {
             return res.status(400).json({ error: "Username and password are required" });
         }
-        // 1. Find the user
-        const { data: users, error } = await supabase
-            .from("user")
-            .select("*")
-            .eq("username", username)
-            .limit(1);
-        if (error) {
-            return res.status(400).json({ error: error.message });
-        }
-        if (!users || users.length === 0) {
+        const user = await findUserByUsername(username);
+        if (!user) {
             return res.status(404).json({ error: "User not found" });
         }
-        const user = users[0];
         // 2. Compare password
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {
             return res.status(401).json({ error: "Invalid credentials" });
         }
-        // 3. Generate JWT
-        const token = jwt.sign({ id: user.id, username: user.username }, // payload
-        process.env.JWT_SECRET, // secret key
-        { expiresIn: "1h" } // expiry
-        );
-        return res.json({ token, user: { id: user.id, name: user.name, username: user.username } });
+        const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: "7d" });
+        return res.json({ token, user: publicUser(user) });
     }
     catch (err) {
         console.error(err);
@@ -312,24 +301,22 @@ app.post("/guest", (req, res) => {
 app.get("/chats/:roomId", async (req, res) => {
     try {
         const roomId = req.params.roomId;
-        const { data, error } = await supabase
-            .from("chat")
-            .select("*")
-            .eq("roomId", roomId);
-        if (error)
-            return res.status(400).json({ error: error.message });
-        return res.json({ messages: data });
+        const messages = await getChatsByRoom(roomId);
+        return res.json({ messages });
     }
     catch (e) {
         return res.status(500).json({ error: "Server error" });
     }
 });
 app.get("/room/:slug", async (req, res) => {
-    const slug = req.params.slug;
-    const { data, error } = await supabase
-        .from("rooms")
-        .select("*")
-        .eq("slug", slug);
+    try {
+        const slug = req.params.slug;
+        const room = await getRoomBySlug(slug);
+        return res.json({ room });
+    }
+    catch (e) {
+        return res.status(500).json({ error: "Server error" });
+    }
 });
 server.listen(3000);
 //# sourceMappingURL=index.js.map

@@ -1,3 +1,5 @@
+import { clearAuthSession, getAuthToken, setAuthTokenOnly } from "./authStorage";
+
 export type MessageHandler = (data: any) => void;
 
 export function createRoomSocket(token: string, onMessage: MessageHandler, onClose?: (ev: CloseEvent) => void) {
@@ -92,17 +94,15 @@ export function testWebSocketConnection(token: string) {
 
 // Function to set up automatic token refresh
 export function setupTokenRefresh() {
-	// Check token every 5 minutes
-	setInterval(async () => {
-		const token = localStorage.getItem("authToken");
+	setInterval(() => {
+		const token = getAuthToken();
 		if (token) {
 			const validation = validateToken(token);
 			if (!validation.isValid && validation.error === "Token is expired") {
-				console.log("🔄 Token expired, refreshing automatically...");
-				await getFreshToken();
+				clearAuthSession();
 			}
 		}
-	}, 5 * 60 * 1000); // 5 minutes
+	}, 5 * 60 * 1000);
 }
 
 // Function to validate JWT token format
@@ -152,7 +152,7 @@ export async function getFreshToken(): Promise<string | null> {
 		
 		if (response.ok) {
 			const data = await response.json();
-			localStorage.setItem("authToken", data.token);
+			setAuthTokenOnly(data.token);
 			console.log('✅ Got fresh token');
 			return data.token;
 		} else {

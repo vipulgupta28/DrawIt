@@ -16,6 +16,12 @@ import {
 
 import Sidebar from "./Sidebar";
 import AuthModal from "./authModal";
+import {
+  clearAuthSession,
+  getAuthToken,
+  getAuthUser,
+  setAuthTokenOnly,
+} from "../lib/authStorage";
 
 export default function Canvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -31,26 +37,17 @@ export default function Canvas() {
 
   // Check for stored authentication and room parameters on component mount
   useEffect(() => {
-    const storedToken = localStorage.getItem("authToken");
-    const storedUser = localStorage.getItem("user");
-    
-    if (storedToken && storedUser) {
-      try {
-        const user = JSON.parse(storedUser);
-        setUsername(user.username);
-        
-        // Check if there's a room parameter in the URL
-        const urlParams = new URLSearchParams(window.location.search);
-        const roomParam = urlParams.get("room");
-        
-        if (roomParam && storedToken) {
-          // Auto-join the room from URL
-          connectToRoom(storedToken, roomParam);
-        }
-      } catch (e) {
-        console.error("Failed to parse stored user data");
-        localStorage.removeItem("authToken");
-        localStorage.removeItem("user");
+    const storedToken = getAuthToken();
+    const user = getAuthUser();
+
+    if (storedToken && user) {
+      setUsername(user.username);
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const roomParam = urlParams.get("room");
+
+      if (roomParam && storedToken) {
+        connectToRoom(storedToken, roomParam);
       }
     }
   }, []);
@@ -205,8 +202,7 @@ export default function Canvas() {
             const guestName = `guest-${Math.random().toString(36).slice(2,8)}`;
             const resp = await api.post("/guest", { username: guestName });
             if (resp.data?.token) {
-              // only refresh the token; do NOT overwrite stored user profile
-              localStorage.setItem("authToken", resp.data.token);
+              setAuthTokenOnly(resp.data.token);
               // keep showing existing username if already set
               connectToRoom(resp.data.token, rid);
               return;
@@ -239,7 +235,7 @@ export default function Canvas() {
   }
 
   async function createShareLink() {
-    const storedToken = localStorage.getItem("authToken");
+    const storedToken = getAuthToken();
     if (!storedToken) {
       alert("Please login first to create a share link");
       return;
@@ -259,7 +255,7 @@ export default function Canvas() {
   }
 
   async function joinFromInput() {
-    const storedToken = localStorage.getItem("authToken");
+    const storedToken = getAuthToken();
     if (!storedToken) {
       alert("Please login first to join a room");
       return;
@@ -295,8 +291,7 @@ export default function Canvas() {
     // Leave current room and save canvas before logout
     leaveCurrentRoom();
     
-    localStorage.removeItem("authToken");
-    localStorage.removeItem("user");
+    clearAuthSession();
     setUsername(null);
     setRoomId(null);
     if (ws) {

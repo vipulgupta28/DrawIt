@@ -1,5 +1,6 @@
 import { useState } from "react";
 import api from "../lib/api";
+import { saveAuthSession, type StoredAuthUser } from "../lib/authStorage";
 
 interface AuthModalProps {
   onLogin: (username: string) => void;
@@ -37,10 +38,9 @@ export default function AuthModal({ onLogin }: AuthModalProps) {
         });
         
         if (response.data.token && response.data.user) {
-          // Auto-login after successful signup
-          localStorage.setItem("authToken", response.data.token);
-          localStorage.setItem("user", JSON.stringify(response.data.user));
-          onLogin(response.data.user.username);
+          const u = response.data.user as StoredAuthUser;
+          saveAuthSession(response.data.token, u);
+          onLogin(u.username);
         }
       } else {
         // Login
@@ -64,11 +64,10 @@ export default function AuthModal({ onLogin }: AuthModalProps) {
       password: password
     });
     
-    if (response.data.token) {
-      // Store token in localStorage for persistence
-      localStorage.setItem("authToken", response.data.token);
-      localStorage.setItem("user", JSON.stringify(response.data.user));
-      onLogin(response.data.user.username);
+    if (response.data.token && response.data.user) {
+      const u = response.data.user as StoredAuthUser;
+      saveAuthSession(response.data.token, u);
+      onLogin(u.username);
     }
   };
 
