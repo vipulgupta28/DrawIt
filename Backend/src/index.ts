@@ -385,6 +385,10 @@ app.post("/guest", (req, res) => {
   });
 
 
+app.get("/health", (req, res) => {
+  res.send("OK");
+});
+
 
 
 server.listen(3000);
